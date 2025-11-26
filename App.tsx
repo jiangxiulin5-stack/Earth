@@ -20,6 +20,7 @@ const continentMap: Record<string, string> = {
 
 const App: React.FC = () => {
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [selectedISO, setSelectedISO] = useState<string | null>(null); // Track ISO for interaction sync
   const [demographicData, setDemographicData] = useState<DemographicReport | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -134,6 +135,7 @@ const App: React.FC = () => {
 
   const handleCountrySelect = useCallback(async (name: string, iso: string) => {
     setSelectedCountry(name);
+    setSelectedISO(iso); // Sync ISO for visual highlighting
     setLoading(true);
     setDemographicData(null);
 
@@ -145,6 +147,7 @@ const App: React.FC = () => {
 
   const closePanel = () => {
     setSelectedCountry(null);
+    setSelectedISO(null);
     setDemographicData(null);
   };
 
@@ -277,7 +280,8 @@ const App: React.FC = () => {
       {/* Main 3D Globe */}
       <WorldGlobe 
         countries={filteredCountries} 
-        onCountrySelect={handleCountrySelect} 
+        onCountrySelect={handleCountrySelect}
+        selectedISO={selectedISO}
       />
 
       {/* Side Panel for Details */}

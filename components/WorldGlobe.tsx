@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Globe, { GlobeMethods } from 'react-globe.gl';
 import * as d3 from 'd3';
 import { GeoJsonFeature } from '../types';
@@ -6,9 +6,35 @@ import { GeoJsonFeature } from '../types';
 interface WorldGlobeProps {
   countries: GeoJsonFeature[];
   onCountrySelect: (name: string, iso: string) => void;
+  selectedISO: string | null;
 }
 
-const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) => {
+// 预定义的高对比度配色盘（排除红色系）
+const PALETTE = [
+  "#2563eb", // Blue 600
+  "#16a34a", // Green 600
+  "#d97706", // Amber 600
+  "#9333ea", // Purple 600
+  "#0891b2", // Cyan 600
+  "#65a30d", // Lime 600
+  "#4f46e5", // Indigo 600
+  "#0d9488", // Teal 600
+  "#c026d3", // Fuchsia 600
+  "#ca8a04", // Yellow 600
+];
+
+const getStringHash = (str: string) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return hash;
+};
+
+// Helper: Check if an ISO code belongs to the "Greater China" sovereignty group
+const isChinaGroup = (iso: string) => iso === 'CHN' || iso === 'TWN';
+
+const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect, selectedISO }) => {
   const globeEl = useRef<GlobeMethods | undefined>(undefined);
   const [hoverD, setHoverD] = useState<GeoJsonFeature | null>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -20,16 +46,6 @@ const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) =
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Color scale for population
-  const colorScale = useMemo(() => {
-    // New Bright Color Scale: Cyan -> Blue -> Red
-    // Removes Purple/Yellow and ensures visibility (not dark)
-    const interpolator = d3.interpolateRgbBasis(["#67e8f9", "#0ea5e9", "#ef4444"]); 
-    
-    return d3.scaleSequentialSqrt(interpolator)
-      .domain([0, 1.4e9]); // Domain covers up to China/India population
   }, []);
 
   const getPolygonLabel = (d: object) => {
@@ -58,6 +74,51 @@ const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) =
     `;
   };
 
+  const getRegionColor = (feat: GeoJsonFeature) => {
+      const { ISO_A3, NAME } = feat.properties;
+
+      // 1. 中国及中国台湾 - 红色高亮 (#ef4444 = Red 500)
+      if (
+          ISO_A3 === 'CHN' || 
+          ISO_A3 === 'TWN' || 
+          NAME === 'China' || 
+          NAME.includes('中国') 
+      ) {
+          return 'rgba(239, 68, 68, 0.9)'; 
+      }
+
+      // 2. 其他国家 - 随机非红配色
+      const seed = ISO_A3 || NAME || "";
+      const hash = getStringHash(seed);
+      const colorHex = PALETTE[Math.abs(hash) % PALETTE.length];
+      
+      return `${colorHex}E6`; 
+  };
+
+  // 统一的高亮判定逻辑：包含 Hover 和 Selected 状态，并处理中国/台湾联动
+  const checkHighlight = (d: GeoJsonFeature) => {
+      const iso = d.properties.ISO_A3;
+      
+      // 1. Check Hover State
+      if (hoverD) {
+          const hoverIso = hoverD.properties.ISO_A3;
+          // Direct match
+          if (hoverD === d) return true; 
+          // China/Taiwan Link: If hovering one, highlight the other
+          if (isChinaGroup(iso) && isChinaGroup(hoverIso)) return true;
+      }
+
+      // 2. Check Selected State (Click persistence)
+      if (selectedISO) {
+          // Direct match
+          if (iso === selectedISO) return true;
+          // China/Taiwan Link: If one is selected, highlight the other
+          if (isChinaGroup(iso) && isChinaGroup(selectedISO)) return true;
+      }
+      
+      return false;
+  };
+
   return (
     <div className="cursor-move">
       <Globe
@@ -69,22 +130,19 @@ const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) =
         lineHoverPrecision={0}
         
         polygonsData={countries}
-        polygonAltitude={d => d === hoverD ? 0.06 : 0.01}
+        
+        // 联动高度：如果属于高亮组，统一升起
+        polygonAltitude={d => checkHighlight(d as GeoJsonFeature) ? 0.08 : 0.01}
+        
+        // 联动颜色：如果属于高亮组，统一变白
         polygonCapColor={d => {
             const feat = d as GeoJsonFeature;
-            // Highlight hover
-            if (d === hoverD) return '#ffffff';
-            
-            // Base color on unified population metric (COLOR_POP) if available, else POP_EST
-            const pop = feat.properties.COLOR_POP || feat.properties.POP_EST;
-            
-            const color = d3.color(colorScale(pop));
-            
-            // High opacity for better visibility on dark background
-            return color ? `rgba(${color.r}, ${color.g}, ${color.b}, 0.9)` : `rgba(255,255,255,0.1)`;
+            if (checkHighlight(feat)) return '#ffffff'; // Highlight color
+            return getRegionColor(feat);
         }}
+        
         polygonSideColor={() => 'rgba(255, 255, 255, 0.1)'}
-        polygonStrokeColor={() => '#111'}
+        polygonStrokeColor={() => 'rgba(255, 255, 255, 0.5)'}
         polygonLabel={getPolygonLabel}
         
         onPolygonHover={setHoverD}
@@ -93,7 +151,6 @@ const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) =
             onCountrySelect(feat.properties.NAME, feat.properties.ISO_A3);
         }}
         
-        // Atmosphere
         atmosphereColor="#3b82f6"
         atmosphereAltitude={0.15}
       />
