@@ -24,13 +24,16 @@ const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) =
 
   // Color scale for population
   const colorScale = useMemo(() => {
-    return d3.scaleSequentialSqrt(d3.interpolateInferno)
-      .domain([0, 1e9]); // Domain from 0 to 1 Billion+ for contrast
+    // New Bright Color Scale: Cyan -> Blue -> Red
+    // Removes Purple/Yellow and ensures visibility (not dark)
+    const interpolator = d3.interpolateRgbBasis(["#67e8f9", "#0ea5e9", "#ef4444"]); 
+    
+    return d3.scaleSequentialSqrt(interpolator)
+      .domain([0, 1.4e9]); // Domain covers up to China/India population
   }, []);
 
   const getPolygonLabel = (d: object) => {
     const feat = d as GeoJsonFeature;
-    // Name is already pre-processed in App.tsx
     const name = feat.properties.NAME;
     const continentMap: Record<string, string> = {
       "Asia": "亚洲",
@@ -70,17 +73,17 @@ const WorldGlobe: React.FC<WorldGlobeProps> = ({ countries, onCountrySelect }) =
         polygonCapColor={d => {
             const feat = d as GeoJsonFeature;
             // Highlight hover
-            if (d === hoverD) return '#3b82f6';
+            if (d === hoverD) return '#ffffff';
             
             // Base color on unified population metric (COLOR_POP) if available, else POP_EST
-            // This ensures Taiwan is colored the same as China if COLOR_POP is shared
             const pop = feat.properties.COLOR_POP || feat.properties.POP_EST;
             
-            // Make boundaries distinct but colors blend nicely with the night theme
             const color = d3.color(colorScale(pop));
-            return color ? `rgba(${color.r}, ${color.g}, ${color.b}, 0.8)` : 'rgba(255,255,255,0.1)';
+            
+            // High opacity for better visibility on dark background
+            return color ? `rgba(${color.r}, ${color.g}, ${color.b}, 0.9)` : `rgba(255,255,255,0.1)`;
         }}
-        polygonSideColor={() => 'rgba(255, 255, 255, 0.05)'}
+        polygonSideColor={() => 'rgba(255, 255, 255, 0.1)'}
         polygonStrokeColor={() => '#111'}
         polygonLabel={getPolygonLabel}
         

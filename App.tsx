@@ -3,7 +3,7 @@ import WorldGlobe from './components/WorldGlobe';
 import DemographicPanel from './components/DemographicPanel';
 import { getCountryDemographics } from './services/geminiService';
 import { DemographicReport, GeoJsonFeature } from './types';
-import { Globe2, Info, Search, Filter, SortAsc, SortDesc, List, Check } from 'lucide-react';
+import { Globe2, Info, Search, Filter, SortAsc, SortDesc, List } from 'lucide-react';
 import * as d3 from 'd3';
 
 const continentMap: Record<string, string> = {
@@ -26,17 +26,20 @@ const App: React.FC = () => {
   // Data State
   const [allCountries, setAllCountries] = useState<GeoJsonFeature[]>([]);
   
-  // Filter State
+  // UI State
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedContinent, setSelectedContinent] = useState("All Regions");
   const [sortMode, setSortMode] = useState<"pop_desc" | "pop_asc" | "name">("pop_desc");
   const [isFilterOpen, setIsFilterOpen] = useState(true);
 
-  // Fetch Data
+  // Fetch and Process Data
   useEffect(() => {
     fetch('https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson')
       .then(res => res.json())
       .then(data => {
+        // Initialize Intl.DisplayNames for translation
+        const translator = new Intl.DisplayNames(['zh-Hans'], { type: 'region' });
+
         // 1. Identify China's population first to use for unification
         let chinaPop = 1400000000; // default fallback
         const chinaFeature = data.features.find((f: any) => f.properties.ISO_A3 === 'CHN' || f.properties.NAME === 'China');
@@ -56,14 +59,34 @@ const App: React.FC = () => {
                  f.properties.CONTINENT = "Other";
              }
 
-             // Explicitly handle Taiwan to ensure it is associated with China visually and semantically
-             if (f.properties.ISO_A3 === 'TWN' || f.properties.NAME === 'Taiwan') {
-               f.properties.NAME = '中国台湾'; // Chinese name for Taiwan
+             // Translate Name
+             let zhName = f.properties.NAME;
+             try {
+                // Try to use ISO_A2 for standard translation
+                if (f.properties.ISO_A2) {
+                   zhName = translator.of(f.properties.ISO_A2) || f.properties.NAME;
+                } 
+             } catch (e) {
+                // Fallback to English name if translation fails
+             }
+
+             // Apply Translation
+             f.properties.NAME = zhName;
+
+             // Strict override for Taiwan
+             if (f.properties.ISO_A3 === 'TWN' || f.properties.NAME === 'Taiwan' || f.properties.NAME.includes('台湾')) {
+               f.properties.NAME = '中国台湾';
                f.properties.ADMIN = '中国台湾';
                f.properties.SOVEREIGNT = 'China';
                f.properties.CONTINENT = 'Asia'; 
                // UNIFICATION: Use China's population for the color scale so it looks identical to mainland China
                f.properties.COLOR_POP = chinaPop;
+             }
+             
+             // Visual adjustment for India: User requested it not to match China's color (Red)
+             // We lower the coloring population metric to map it to the blue/cyan range of other countries
+             if (f.properties.ISO_A3 === 'IND') {
+                f.properties.COLOR_POP = 200000000; // ~200M renders as Blue-ish, distinct from China's Red
              }
              
              return f;
@@ -102,8 +125,7 @@ const App: React.FC = () => {
     result.sort((a, b) => {
       if (sortMode === 'pop_desc') return b.properties.POP_EST - a.properties.POP_EST;
       if (sortMode === 'pop_asc') return a.properties.POP_EST - b.properties.POP_EST;
-      // Use localeCompare for correct Chinese character sorting if needed, though most GeoJSON names are English keys unless mapped.
-      // However, we changed Taiwan's NAME property to Chinese.
+      // Sort by Chinese Pinyin name
       return a.properties.NAME.localeCompare(b.properties.NAME, 'zh-CN');
     });
 
@@ -143,8 +165,8 @@ const App: React.FC = () => {
       </div>
 
       {/* Filter & Control Sidebar */}
-      <div className={`absolute top-36 left-4 z-20 transition-all duration-300 ${isFilterOpen ? 'w-80' : 'w-14'}`}>
-        <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[calc(100vh-180px)]">
+      <div className={`absolute top-40 left-4 z-20 transition-all duration-300 ${isFilterOpen ? 'w-80' : 'w-14'}`}>
+        <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden shadow-2xl flex flex-col max-h-[calc(100vh-200px)]">
           
           {/* Toggle Button */}
           <button 
@@ -168,7 +190,7 @@ const App: React.FC = () => {
                 <Search className="absolute left-3 top-2.5 text-gray-500" size={16} />
                 <input 
                   type="text" 
-                  placeholder="搜索地区..." 
+                  placeholder="搜索国家/地区..." 
                   className="w-full bg-white/5 border border-white/10 rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-600 transition-colors"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}

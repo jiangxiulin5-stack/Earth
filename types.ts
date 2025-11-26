@@ -9,6 +9,7 @@ export interface GeoJsonFeature {
   type: string;
   properties: {
     ISO_A3: string;
+    ISO_A2?: string; // Added for Intl.DisplayNames compatibility
     NAME: string;
     POP_EST: number;
     CONTINENT?: string;
